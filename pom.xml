@@ -164,11 +164,13 @@
 			<version>1.0.2</version>
 		</dependency>
 
+		<!-- https://mvnrepository.com/artifact/com.github.jsqlparser/jsqlparser -->
 		<dependency>
-			<groupId>com.github.jsqlparser</groupId>
-			<artifactId>jsqlparser</artifactId>
-			<version>${jsqlparser.version}</version>
+		    <groupId>com.github.jsqlparser</groupId>
+		    <artifactId>jsqlparser</artifactId>
+		    <version>4.0</version>
 		</dependency>
+
 
 		<dependency>
 			<groupId>net.turnbig</groupId>
