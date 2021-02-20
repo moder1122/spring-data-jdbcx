@@ -19,6 +19,8 @@ import org.springframework.data.domain.Sort.Direction;
 import org.springframework.data.domain.Sort.Order;
 import org.springframework.util.Assert;
 
+
+
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.LongValue;
@@ -38,6 +40,7 @@ import net.sf.jsqlparser.statement.select.SetOperationList;
 import net.sf.jsqlparser.statement.select.SubSelect;
 import net.sf.jsqlparser.statement.select.WithItem;
 import net.turnbig.jdbcx.dialect.exception.GeneratePagingSqlException;
+
 
 /**
  * 
@@ -78,7 +81,7 @@ import net.turnbig.jdbcx.dialect.exception.GeneratePagingSqlException;
     
     TABLE { [ ONLY ] table_name [ * ] | with_query_name }
  * </pre>
- * 
+ * ROW_NUMBER() over (ORDER BY (SELECT 1)) AS __relational_row_number__
  * @author Woo Cupid
  * @date 2016年1月28日
  * @version $Revision$
@@ -143,12 +146,50 @@ public class SelectSqlUtils {
 	}
 	
 	
+	/**
+	 * get pageable SQL which support OFFSET :offsetNum ROWS FETCH NEXT :pageSize ROWS ONLY
+	 * @param sql
+	 * @param pageable
+	 * @return
+	 */
 	public static String getPageableSqlWithFtechOffset(String  sql, Pageable pageable) {
-		Select select = parseSelectSql(sql);
-		SelectSqlUtils.addSort(select, pageable.getSort());
-		addOffsetFetch(select,pageable.getOffset(),Long.valueOf(pageable.getPageSize()).longValue());
+		Select select = addOffsetFetch(parseSelectSql(sql),pageable.getOffset(),Long.valueOf(pageable.getPageSize()).longValue());
 		return select.toString();
 	}
+	
+	
+	
+	public static String addDefaultSort(String sql, Sort sort) {
+		Select select = parseSelectSql(sql);
+		addDefaultSort(select,sort);
+		return select.toString();
+    }
+	
+	
+	private  static Select addDefaultSort(Select select, Sort sort) {
+		SelectBody sb = select.getSelectBody();
+		if (sb instanceof PlainSelect) {
+			PlainSelect plainSelect = (PlainSelect) sb;
+			List<OrderByElement> elements = plainSelect.getOrderByElements();
+			if(elements==null) {
+				SelectExpressionItem defaultOrder= new SelectExpressionItem(new Column("ROW_NUMBER() over (Order By (SELECT 1))"));
+				defaultOrder.setAlias(new Alias("relational_row_number"));
+				plainSelect.addSelectItems(defaultOrder);
+				select = addSort(select,Sort.by("relational_row_number"));
+			}
+		} else if (sb instanceof SetOperationList) {
+			logger.error(
+					"select body could not be a with-item, please report the issue to https://github.com/IamFive/spring-data-jdbcx");
+			throw new GeneratePagingSqlException("SQL body could not be a with-item");
+		} else if (sb instanceof WithItem) {
+			// should not happen ?
+			logger.error(
+					"select body could not be a with-item, please report the issue to https://github.com/IamFive/spring-data-jdbcx");
+			throw new GeneratePagingSqlException("SQL body could not be a with-item");
+		}
+		return select;
+   }
+
 	
 
 	/**
@@ -162,8 +203,11 @@ public class SelectSqlUtils {
 			if (!(smt instanceof Select)) {
 				throw new GeneratePagingSqlException(sql, "SQL should be a legal select SQL");
 			}
-			return (Select) smt;
+			Select select = (Select) smt;
+			select = convetToPlainSelect(select);
+			return select;
 		} catch (JSQLParserException e) {
+			e.printStackTrace();
 			throw new GeneratePagingSqlException(sql, "SQL is illegal");
 		}
 	}
@@ -176,20 +220,20 @@ public class SelectSqlUtils {
 	 * @return
 	 * @throws JSQLParserException
 	 */
-	public static String addSort(String sql, Sort sort) {
-		if (sort != null) {
-			Iterator<Order> iterator = sort.iterator();
-			if (iterator.hasNext()) {
-				Select select = parseSelectSql(sql);
-				addSort(select, sort);
-				return select.toString();
-			}
-		}
+//	public static String addSort(String sql, Sort sort) {
+//		if (sort != null) {
+//			Iterator<Order> iterator = sort.iterator();
+//			if (iterator.hasNext()) {
+//				Select select = parseSelectSql(sql);
+//				addSort(select, sort);
+//				return select.toString();
+//			}
+//		}
+//
+//		return sql;
+//	}
 
-		return sql;
-	}
-
-	public static Select addSort(Select select, Sort sort) {
+	private static Select addSort(Select select, Sort sort) {
 		if (sort != null) {
 			Iterator<Order> iterator = sort.iterator();
 			if (iterator.hasNext()) {
@@ -225,21 +269,21 @@ public class SelectSqlUtils {
 	 * @param orderbys id desc, name asc
 	 * @return
 	 */
-	public static String addSort(String sql, String... orderbys) {
-		List<Order> list = new ArrayList<Order>();
-		for (String orderby : orderbys) {
-			String[] split = orderby.split(" ");
-			Assert.isTrue(split.length == 2, "order by string should like: property [asc|desc]");
-			list.add(new Order(Direction.fromString(split[1]), split[0]));
-		}
-
-		if (list.size() > 0) {
-			Sort sort = Sort.by(list);
-			return addSort(sql, sort);
-		}
-
-		return sql;
-	}
+//	public static String addSort(String sql, String... orderbys) {
+//		List<Order> list = new ArrayList<Order>();
+//		for (String orderby : orderbys) {
+//			String[] split = orderby.split(" ");
+//			Assert.isTrue(split.length == 2, "order by string should like: property [asc|desc]");
+//			list.add(new Order(Direction.fromString(split[1]), split[0]));
+//		}
+//
+//		if (list.size() > 0) {
+//			Sort sort = Sort.by(list);
+//			return addSort(sql, sort);
+//		}
+//
+//		return sql;
+//	}
 
 	/**
 	 * @param iterator
@@ -265,8 +309,7 @@ public class SelectSqlUtils {
 	 * @param offsetNum
 	 * @param pageSize
 	 */
-	private static void addOffsetFetch(Select select,long offsetNum,long pageSize) {
-		
+	private static Select addOffsetFetch(Select select,long offsetNum,long pageSize) {
 		SelectBody sb = select.getSelectBody();
 		if (sb instanceof PlainSelect) {
 			PlainSelect plainSelect = (PlainSelect) sb;
@@ -301,6 +344,7 @@ public class SelectSqlUtils {
 					"select body could not be a with-item, please report the issue to https://github.com/IamFive/spring-data-jdbcx");
 			throw new GeneratePagingSqlException(select.toString(), "SQL body could not be a with-item");
 		}
+		return select;
 	}
 	
 	/**
@@ -366,6 +410,37 @@ public class SelectSqlUtils {
 		return select.toString();
 	}
 
+	
+	
+   /**
+    * conver sql   
+    *          "SELECT a FROM mytable order by xxx "
+	    	   "        UNION " 
+	    	   "       SELECT b FROM mytable2 order by yyy"
+	   to 
+	   "select * from (SELECT a FROM mytable order by xxx UNION SELECT b FROM mytable2 order by yyy)"		
+    * @param select
+    * @return
+    */
+   public static Select convetToPlainSelect(Select select) {
+
+	    SelectBody sb = select.getSelectBody();
+		if (sb instanceof SetOperationList) {
+		    ArrayList<SelectItem> selectItems = new ArrayList<SelectItem>();
+		    selectItems.add(new SelectExpressionItem(new Column("*")));
+		    
+			PlainSelect plainSelect = new PlainSelect();
+			SubSelect subSelect = new SubSelect();
+			subSelect.setSelectBody(select.getSelectBody());
+			//subSelect.setAlias(TABLE_ALIAS);
+			plainSelect.setFromItem(subSelect);
+			plainSelect.setSelectItems(selectItems);
+			select.setSelectBody(plainSelect);
+		}
+		return select;
+	}
+	
+	
 	/**
 	 * 是否包含聚合函数
 	 * @param select

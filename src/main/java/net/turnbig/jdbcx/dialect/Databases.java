@@ -35,6 +35,7 @@ import net.turnbig.jdbcx.dialect.impl.MysqlDialect;
 import net.turnbig.jdbcx.dialect.impl.OracleDialect;
 import net.turnbig.jdbcx.dialect.impl.PostgreDialect;
 import net.turnbig.jdbcx.dialect.impl.SqliteDialect;
+import net.turnbig.jdbcx.dialect.impl.SqlServer2012Dialect;
 
 public enum Databases {
 
@@ -51,9 +52,10 @@ public enum Databases {
 	oracle("Oracle", OracleDialect.class), 
     db2("DB2", Db2Dialect.class), 
     informix("informix", InformixDialect.class), 
+    sqlServer2012("Microsoft SQL Server",SqlServer2012Dialect.class);
     //sqlserver, 
     //sqlserver2012;
-    ;
+    //;
 	//@on
 
 	private static final Logger logger = LoggerFactory.getLogger(Databases.class);
